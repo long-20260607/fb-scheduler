@@ -21,7 +21,7 @@ app.use('/api/admin', adminRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date() });
 });
 
 // 初始化管理员账号

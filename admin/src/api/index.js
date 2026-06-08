@@ -4,7 +4,7 @@ import router from '../router'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 10000
+  timeout: 15000
 })
 
 // 请求拦截器
@@ -53,6 +53,7 @@ export const createCode = (data) => api.post('/admin/codes', data)
 export const batchCreateCodes = (data) => api.post('/admin/codes/batch', data)
 export const updateCode = (id, data) => api.put(`/admin/codes/${id}`, data)
 export const deleteCode = (id) => api.delete(`/admin/codes/${id}`)
+export const batchDeleteCodes = (ids) => api.post('/admin/codes/batch-delete', { ids })
 
 // 统计数据
 export const getStats = () => api.get('/admin/stats')

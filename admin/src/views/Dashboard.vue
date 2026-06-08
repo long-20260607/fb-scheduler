@@ -192,4 +192,7 @@ onMounted(() => {
 .quick-actions .el-button {
   width: 100%;
 }
+.el-button+.el-button{
+    margin-left: 0;
+}
 </style>

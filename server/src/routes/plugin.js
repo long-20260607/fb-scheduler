@@ -49,7 +49,7 @@ router.post('/active', async (req, res) => {
       return res.json({ status: false, msg: '激活码已过期' });
     }
 
-    // 检查是否过期
+    // 检查激活码是否超过激活截止时间
     if (codeData.expire_at && new Date(codeData.expire_at) < new Date()) {
       await db.query('UPDATE activation_codes SET status = $1 WHERE id = $2', ['expired', codeData.id]);
       await logAction('activate', code, fingerId, req, 'failed', '激活码已过期');
@@ -87,18 +87,24 @@ router.post('/active', async (req, res) => {
         'UPDATE device_activations SET last_check_at = NOW() WHERE id = $1',
         [existingActivation.rows[0].id]
       );
+      const deviceExpireAt = existingActivation.rows[0].expire_at;
       await logAction('activate', code, fingerId, req, 'success', '设备已激活');
       return res.json({
         status: true,
         msg: '设备已激活',
-        data: codeData.expire_at ? codeData.expire_at.toISOString() : null
+        data: deviceExpireAt
       });
     }
 
+    // 计算设备过期时间：以激活时间为起点 + duration_days
+    const durationDays = codeData.duration_days || 30;
+    const now = new Date();
+    const deviceExpireAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
     // 创建新的激活记录
     await db.query(
-      'INSERT INTO device_activations (code_id, finger_id, status) VALUES ($1, $2, $3)',
-      [codeData.id, fingerId, 'active']
+      'INSERT INTO device_activations (code_id, finger_id, status, expire_at) VALUES ($1, $2, $3, $4)',
+      [codeData.id, fingerId, 'active', deviceExpireAt]
     );
 
     await logAction('activate', code, fingerId, req, 'success', '激活成功');
@@ -106,7 +112,7 @@ router.post('/active', async (req, res) => {
     return res.json({
       status: true,
       msg: '激活成功',
-      data: codeData.expire_at ? codeData.expire_at.toISOString() : null
+      data: deviceExpireAt
     });
   } catch (error) {
     console.error('激活失败:', error);
@@ -194,13 +200,6 @@ router.post('/checkTime', async (req, res) => {
       return res.json({ status: false, msg: '激活码已失效' });
     }
 
-    // 检查是否过期
-    if (codeData.expire_at && new Date(codeData.expire_at) < new Date()) {
-      await db.query('UPDATE activation_codes SET status = $1 WHERE id = $2', ['expired', codeData.id]);
-      await logAction('check', code, fingerId, req, 'failed', '激活码已过期');
-      return res.json({ status: false, msg: '激活码已过期' });
-    }
-
     // 查找激活记录
     const activationResult = await db.query(
       'SELECT * FROM device_activations WHERE code_id = $1 AND finger_id = $2 AND status = $3',
@@ -212,10 +211,19 @@ router.post('/checkTime', async (req, res) => {
       return res.json({ status: false, msg: '设备未激活' });
     }
 
+    const deviceData = activationResult.rows[0];
+
+    // 检查设备级过期时间
+    if (deviceData.expire_at && new Date(deviceData.expire_at) < new Date()) {
+      await db.query('UPDATE device_activations SET status = $1 WHERE id = $2', ['inactive', deviceData.id]);
+      await logAction('check', code, fingerId, req, 'failed', '激活已过期');
+      return res.json({ status: false, msg: '激活已过期' });
+    }
+
     // 更新最后检查时间
     await db.query(
       'UPDATE device_activations SET last_check_at = NOW() WHERE id = $1',
-      [activationResult.rows[0].id]
+      [deviceData.id]
     );
 
     await logAction('check', code, fingerId, req, 'success', '激活有效');
@@ -223,7 +231,7 @@ router.post('/checkTime', async (req, res) => {
     return res.json({
       status: true,
       msg: '激活有效',
-      data: codeData.expire_at ? codeData.expire_at.toISOString() : null
+      data: deviceData.expire_at
     });
   } catch (error) {
     console.error('检查激活状态失败:', error);

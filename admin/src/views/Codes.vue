@@ -31,6 +31,13 @@
           </div>
 
           <div class="header-right">
+            <el-button
+              type="danger"
+              :disabled="selectedRows.length === 0"
+              @click="handleBatchDelete"
+            >
+              批量删除{{ selectedRows.length > 0 ? `(${selectedRows.length})` : '' }}
+            </el-button>
             <el-button type="primary" @click="showBatchDialog = true">
               <el-icon><Plus /></el-icon>
               批量创建
@@ -43,8 +50,19 @@
         </div>
       </template>
 
-      <el-table :data="codes" v-loading="loading" border stripe>
-        <el-table-column prop="code" label="激活码" min-width="200" />
+      <el-table
+        :data="codes"
+        v-loading="loading"
+        border
+        stripe
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="50" />
+        <el-table-column prop="code" label="激活码" min-width="200">
+          <template #default="{ row }">
+            <span class="code-text" @click="copyCode(row.code)">{{ row.code }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
@@ -52,10 +70,20 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="max_devices" label="最大设备数" width="120" />
-        <el-table-column prop="expire_at" label="过期时间" width="180">
+        <el-table-column prop="duration_days" label="有效天数" width="100">
           <template #default="{ row }">
-            {{ row.expire_at ? formatDate(row.expire_at) : '永不过期' }}
+            {{ row.duration_days || 30 }} 天
+          </template>
+        </el-table-column>
+        <el-table-column prop="max_devices" label="最大设备数" width="120" />
+        <el-table-column prop="last_activated_at" label="激活时间" width="180">
+          <template #default="{ row }">
+            {{ row.last_activated_at ? formatDate(row.last_activated_at) : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="device_expire_at" label="到期时间" width="180">
+          <template #default="{ row }">
+            {{ row.device_expire_at ? formatDate(row.device_expire_at) : '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180">
@@ -101,16 +129,12 @@
             </template>
           </el-input>
         </el-form-item>
+        <el-form-item label="有效天数" prop="duration_days">
+          <el-input-number v-model="createForm.duration_days" :min="1" :max="3650" />
+          <span style="margin-left: 10px; color: #909399">激活后开始计算</span>
+        </el-form-item>
         <el-form-item label="最大设备数" prop="max_devices">
           <el-input-number v-model="createForm.max_devices" :min="1" :max="100" />
-        </el-form-item>
-        <el-form-item label="过期时间">
-          <el-date-picker
-            v-model="createForm.expire_at"
-            type="datetime"
-            placeholder="选择过期时间（留空为永不过期）"
-            style="width: 100%"
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -128,16 +152,12 @@
         <el-form-item label="前缀">
           <el-input v-model="batchForm.prefix" placeholder="可选，如 VIP-" />
         </el-form-item>
+        <el-form-item label="有效天数" prop="duration_days">
+          <el-input-number v-model="batchForm.duration_days" :min="1" :max="3650" />
+          <span style="margin-left: 10px; color: #909399">激活后开始计算</span>
+        </el-form-item>
         <el-form-item label="最大设备数" prop="max_devices">
           <el-input-number v-model="batchForm.max_devices" :min="1" :max="100" />
-        </el-form-item>
-        <el-form-item label="过期时间">
-          <el-date-picker
-            v-model="batchForm.expire_at"
-            type="datetime"
-            placeholder="选择过期时间（留空为永不过期）"
-            style="width: 100%"
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -152,16 +172,12 @@
         <el-form-item label="激活码">
           <el-input :value="editForm.code" disabled />
         </el-form-item>
+        <el-form-item label="有效天数">
+          <el-input-number v-model="editForm.duration_days" :min="1" :max="3650" />
+          <span style="margin-left: 10px; color: #909399">激活后开始计算</span>
+        </el-form-item>
         <el-form-item label="最大设备数">
           <el-input-number v-model="editForm.max_devices" :min="1" :max="100" />
-        </el-form-item>
-        <el-form-item label="过期时间">
-          <el-date-picker
-            v-model="editForm.expire_at"
-            type="datetime"
-            placeholder="选择过期时间（留空为永不过期）"
-            style="width: 100%"
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -176,7 +192,7 @@
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
-import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode } from '../api'
+import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes } from '../api'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -187,6 +203,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const searchKeyword = ref('')
 const searchStatus = ref('')
+const selectedRows = ref([])
 
 const showCreateDialog = ref(false)
 const showBatchDialog = ref(false)
@@ -198,22 +215,22 @@ const editFormRef = ref(null)
 
 const createForm = reactive({
   code: '',
-  max_devices: 1,
-  expire_at: null
+  duration_days: 30,
+  max_devices: 1
 })
 
 const batchForm = reactive({
   count: 10,
   prefix: '',
-  max_devices: 1,
-  expire_at: null
+  duration_days: 30,
+  max_devices: 1
 })
 
 const editForm = reactive({
   id: '',
   code: '',
-  max_devices: 1,
-  expire_at: null
+  duration_days: 30,
+  max_devices: 1
 })
 
 const createRules = {
@@ -249,12 +266,9 @@ const formatDate = (dateStr) => {
 }
 
 const generateCode = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let code = ''
-  for (let i = 0; i < 20; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  createForm.code = code
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  createForm.code = `${seg()}-${seg()}-${seg()}-${seg()}`
 }
 
 const fetchCodes = async () => {
@@ -290,7 +304,6 @@ const handleCreate = async () => {
         ElMessage.success('创建成功')
         showCreateDialog.value = false
         createForm.code = ''
-        createForm.expire_at = null
         fetchCodes()
       }
     } catch (error) {
@@ -326,8 +339,8 @@ const handleBatchCreate = async () => {
 const handleEdit = (row) => {
   editForm.id = row.id
   editForm.code = row.code
+  editForm.duration_days = row.duration_days || 30
   editForm.max_devices = row.max_devices
-  editForm.expire_at = row.expire_at
   showEditDialog.value = true
 }
 
@@ -335,8 +348,8 @@ const handleUpdate = async () => {
   updating.value = true
   try {
     const res = await updateCode(editForm.id, {
-      max_devices: editForm.max_devices,
-      expire_at: editForm.expire_at
+      duration_days: editForm.duration_days,
+      max_devices: editForm.max_devices
     })
     if (res.status) {
       ElMessage.success('更新成功')
@@ -389,6 +402,46 @@ const handleDelete = async (row) => {
   }
 }
 
+const handleSelectionChange = (rows) => {
+  selectedRows.value = rows
+}
+
+const handleBatchDelete = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedRows.value.length} 个激活码吗？删除后不可恢复。`,
+      '警告',
+      { type: 'error' }
+    )
+
+    const ids = selectedRows.value.map(row => row.id)
+    const res = await batchDeleteCodes(ids)
+    if (res.status) {
+      ElMessage.success(res.msg)
+      fetchCodes()
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('批量删除失败:', error)
+    }
+  }
+}
+
+const copyCode = async (code) => {
+  try {
+    await navigator.clipboard.writeText(code)
+    ElMessage.success('已复制')
+  } catch {
+    const input = document.createElement('input')
+    input.value = code
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    ElMessage.success('已复制')
+  }
+}
+
 onMounted(() => {
   fetchCodes()
 })
@@ -410,5 +463,15 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.code-text {
+  cursor: pointer;
+  color: #409eff;
+  font-family: monospace;
+}
+
+.code-text:hover {
+  text-decoration: underline;
 }
 </style>

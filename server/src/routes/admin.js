@@ -53,24 +53,77 @@ router.post('/login', async (req, res) => {
 // 以下接口需要认证
 router.use(authMiddleware);
 
+// 快速创建激活码（默认一个月有效，1台设备）
+router.post('/codes/quick', async (req, res) => {
+  try {
+    const { count = 1, max_devices = 1, duration_days = 30, prefix = '' } = req.body;
+
+    if (count < 1 || count > 100) {
+      return res.json({ status: false, msg: '数量范围 1-100' });
+    }
+
+    const genCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      return prefix + `${seg()}-${seg()}-${seg()}-${seg()}`
+    }
+
+    const codes = [];
+    for (let i = 0; i < count; i++) {
+      codes.push(genCode());
+    }
+
+    const values = codes.map((code, index) => {
+      const params = [`$${index * 3 + 1}`, `$${index * 3 + 2}`, `$${index * 3 + 3}`];
+      return `(${params.join(', ')})`;
+    }).join(', ');
+
+    const flatParams = codes.flatMap(code => [code, duration_days, max_devices]);
+
+    await db.query(
+      `INSERT INTO activation_codes (code, duration_days, max_devices)
+       VALUES ${values}`,
+      flatParams
+    );
+
+    return res.json({
+      status: true,
+      msg: `成功创建 ${count} 个激活码（激活后 ${duration_days} 天有效）`,
+      data: {
+        codes,
+        duration_days,
+        max_devices
+      }
+    });
+  } catch (error) {
+    console.error('快速创建激活码失败:', error);
+    return res.json({ status: false, msg: '创建失败: ' + error.message });
+  }
+});
+
 // 获取激活码列表
 router.get('/codes', async (req, res) => {
   try {
     const { page = 1, pageSize = 20, status, keyword } = req.query;
     const offset = (page - 1) * pageSize;
 
-    let query = 'SELECT * FROM activation_codes';
-    let countQuery = 'SELECT COUNT(*) as total FROM activation_codes';
+    let query = `SELECT ac.*, la.last_activated_at, la.device_expire_at FROM activation_codes ac
+      LEFT JOIN LATERAL (
+        SELECT MAX(activated_at) as last_activated_at, MAX(expire_at) as device_expire_at
+        FROM device_activations da
+        WHERE da.code_id = ac.id AND da.status = 'active'
+      ) la ON true`;
+    let countQuery = 'SELECT COUNT(*) as total FROM activation_codes ac';
     const params = [];
     const conditions = [];
 
     if (status) {
-      conditions.push(`status = $${params.length + 1}`);
+      conditions.push(`ac.status = $${params.length + 1}`);
       params.push(status);
     }
 
     if (keyword) {
-      conditions.push(`code ILIKE $${params.length + 1}`);
+      conditions.push(`ac.code ILIKE $${params.length + 1}`);
       params.push(`%${keyword}%`);
     }
 
@@ -80,7 +133,7 @@ router.get('/codes', async (req, res) => {
       countQuery += whereClause;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    query += ` ORDER BY ac.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(parseInt(pageSize), parseInt(offset));
 
     const [dataResult, countResult] = await Promise.all([
@@ -106,7 +159,7 @@ router.get('/codes', async (req, res) => {
 // 创建激活码
 router.post('/codes', async (req, res) => {
   try {
-    const { code, expire_at, max_devices = 1 } = req.body;
+    const { code, duration_days = 30, max_devices = 1 } = req.body;
 
     if (!code) {
       return res.json({ status: false, msg: '请输入激活码' });
@@ -120,10 +173,10 @@ router.post('/codes', async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO activation_codes (code, expire_at, max_devices)
+      `INSERT INTO activation_codes (code, duration_days, max_devices)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [code, expire_at || null, max_devices]
+      [code, duration_days, max_devices]
     );
 
     return res.json({
@@ -140,16 +193,21 @@ router.post('/codes', async (req, res) => {
 // 批量创建激活码
 router.post('/codes/batch', async (req, res) => {
   try {
-    const { count = 1, prefix = '', expire_at, max_devices = 1 } = req.body;
+    const { count = 1, prefix = '', duration_days = 30, max_devices = 1 } = req.body;
 
     if (!count || count < 1 || count > 100) {
       return res.json({ status: false, msg: '数量范围 1-100' });
     }
 
+    const genCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      return prefix + `${seg()}-${seg()}-${seg()}-${seg()}`
+    }
+
     const codes = [];
     for (let i = 0; i < count; i++) {
-      const code = prefix + uuidv4().replace(/-/g, '').substring(0, 16).toUpperCase();
-      codes.push(code);
+      codes.push(genCode());
     }
 
     const values = codes.map((code, index) => {
@@ -157,18 +215,18 @@ router.post('/codes/batch', async (req, res) => {
       return `(${params.join(', ')})`;
     }).join(', ');
 
-    const flatParams = codes.flatMap(code => [code, expire_at || null, max_devices]);
+    const flatParams = codes.flatMap(code => [code, duration_days, max_devices]);
 
     await db.query(
-      `INSERT INTO activation_codes (code, expire_at, max_devices)
+      `INSERT INTO activation_codes (code, duration_days, max_devices)
        VALUES ${values}`,
       flatParams
     );
 
     return res.json({
       status: true,
-      msg: `成功创建 ${count} 个激活码`,
-      data: { codes }
+      msg: `成功创建 ${count} 个激活码（激活后 ${duration_days} 天有效）`,
+      data: { codes, duration_days }
     });
   } catch (error) {
     console.error('批量创建激活码失败:', error);
@@ -180,7 +238,7 @@ router.post('/codes/batch', async (req, res) => {
 router.put('/codes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, expire_at, max_devices } = req.body;
+    const { status, expire_at, duration_days, max_devices } = req.body;
 
     const fields = [];
     const params = [];
@@ -194,6 +252,11 @@ router.put('/codes/:id', async (req, res) => {
     if (expire_at !== undefined) {
       fields.push(`expire_at = $${paramIndex++}`);
       params.push(expire_at || null);
+    }
+
+    if (duration_days !== undefined) {
+      fields.push(`duration_days = $${paramIndex++}`);
+      params.push(duration_days);
     }
 
     if (max_devices !== undefined) {
@@ -245,6 +308,34 @@ router.delete('/codes/:id', async (req, res) => {
     return res.json({ status: true, msg: '删除成功' });
   } catch (error) {
     console.error('删除激活码失败:', error);
+    return res.json({ status: false, msg: '删除失败: ' + error.message });
+  }
+});
+
+// 批量删除激活码
+router.post('/codes/batch-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.json({ status: false, msg: '请选择要删除的激活码' });
+    }
+
+    if (ids.length > 100) {
+      return res.json({ status: false, msg: '单次最多删除 100 条' });
+    }
+
+    const result = await db.query(
+      'DELETE FROM activation_codes WHERE id = ANY($1) RETURNING id',
+      [ids]
+    );
+
+    return res.json({
+      status: true,
+      msg: `成功删除 ${result.rows.length} 个激活码`
+    });
+  } catch (error) {
+    console.error('批量删除失败:', error);
     return res.json({ status: false, msg: '删除失败: ' + error.message });
   }
 });

@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS activation_codes (
   code VARCHAR(50) UNIQUE NOT NULL,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'expired')),
   expire_at TIMESTAMP,
+  duration_days INTEGER DEFAULT 30,
   max_devices INTEGER DEFAULT 1,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS device_activations (
   code_id UUID REFERENCES activation_codes(id) ON DELETE CASCADE,
   finger_id VARCHAR(100) NOT NULL,
   activated_at TIMESTAMP DEFAULT NOW(),
+  expire_at TIMESTAMP,
   last_check_at TIMESTAMP,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   UNIQUE(code_id, finger_id)
@@ -47,3 +49,4 @@ CREATE INDEX IF NOT EXISTS idx_activation_codes_status ON activation_codes(statu
 CREATE INDEX IF NOT EXISTS idx_device_activations_code_id ON device_activations(code_id);
 CREATE INDEX IF NOT EXISTS idx_device_activations_finger_id ON device_activations(finger_id);
 CREATE INDEX IF NOT EXISTS idx_activation_logs_created_at ON activation_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_activation_logs_action_result_created ON activation_logs(action, result, created_at);
