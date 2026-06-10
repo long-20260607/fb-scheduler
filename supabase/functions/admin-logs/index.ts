@@ -1,30 +1,4 @@
-import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
-
-// 验证 JWT
-async function verifyToken(token: string): Promise<any> {
-  const JWT_SECRET = Deno.env.get('JWT_SECRET') || 'fb-scheduler-secret-2024-xK9mP2vL'
-  const encoder = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(JWT_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['verify']
-  )
-
-  try {
-    const [header, payload, signature] = token.split('.')
-    const signatureBytes = Uint8Array.from(atob(signature), c => c.charCodeAt(0))
-    const data = encoder.encode(`${header}.${payload}`)
-
-    const valid = await crypto.subtle.verify('HMAC', key, signatureBytes, data)
-    if (!valid) return null
-
-    return JSON.parse(atob(payload))
-  } catch {
-    return null
-  }
-}
+import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

@@ -1,30 +1,4 @@
-import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
-
-// 验证 JWT
-async function verifyToken(token: string): Promise<any> {
-  const JWT_SECRET = Deno.env.get('JWT_SECRET') || 'fb-scheduler-secret-2024-xK9mP2vL'
-  const encoder = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(JWT_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['verify']
-  )
-
-  try {
-    const [header, payload, signature] = token.split('.')
-    const signatureBytes = Uint8Array.from(atob(signature), c => c.charCodeAt(0))
-    const data = encoder.encode(`${header}.${payload}`)
-
-    const valid = await crypto.subtle.verify('HMAC', key, signatureBytes, data)
-    if (!valid) return null
-
-    return JSON.parse(atob(payload))
-  } catch {
-    return null
-  }
-}
+import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
 
 // 生成激活码
 function genCode(prefix: string = ''): string {
@@ -54,7 +28,11 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url)
-    const path = url.pathname.split('/').pop()
+    const parts = url.pathname.split('/')
+    // parts: ['', 'functions', 'v1', 'admin-codes', ...extra...]
+    // path = 函数名之后的子路径段，函数名本身不算
+    const fnIdx = parts.indexOf('admin-codes')
+    const path = fnIdx >= 0 && fnIdx < parts.length - 1 ? parts[parts.length - 1] : ''
 
     // GET /admin-codes - 获取列表
     if (req.method === 'GET' && !path) {

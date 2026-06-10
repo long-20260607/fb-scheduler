@@ -3,11 +3,11 @@ CREATE TABLE IF NOT EXISTS activation_codes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code VARCHAR(50) UNIQUE NOT NULL,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'disabled', 'expired')),
-  expire_at TIMESTAMP,
+  expire_at TIMESTAMPTZ,
   duration_days INTEGER DEFAULT 30,
   max_devices INTEGER DEFAULT 1,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 设备激活记录表
@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS device_activations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code_id UUID REFERENCES activation_codes(id) ON DELETE CASCADE,
   finger_id VARCHAR(100) NOT NULL,
-  activated_at TIMESTAMP DEFAULT NOW(),
-  expire_at TIMESTAMP,
-  last_check_at TIMESTAMP,
+  activated_at TIMESTAMPTZ DEFAULT NOW(),
+  expire_at TIMESTAMPTZ,
+  last_check_at TIMESTAMPTZ,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   UNIQUE(code_id, finger_id)
 );
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS activation_logs (
   user_agent TEXT,
   result VARCHAR(20),
   message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 管理员表
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username VARCHAR(50) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 创建索引
