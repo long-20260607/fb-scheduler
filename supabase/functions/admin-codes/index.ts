@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
 
       let query = supabase
         .from('activation_codes')
-        .select('*, device_activations!left(activated_at, expire_at, status)', { count: 'exact' })
+        .select('*, device_activations!left(activated_at)', { count: 'exact' })
 
       if (status) query = query.eq('status', status)
       if (keyword) query = query.ilike('code', `%${keyword}%`)
@@ -56,23 +56,18 @@ Deno.serve(async (req) => {
 
       if (error) throw error
 
-      // 处理数据，提取最新的激活时间和到期时间
       const list = (data || []).map(item => {
-        const activeActivations = (item.device_activations || [])
-          .filter((da: any) => da.status === 'active')
-        const lastActivatedAt = activeActivations.length > 0
-          ? activeActivations.reduce((max: string, da: any) =>
-              da.activated_at > max ? da.activated_at : max, activeActivations[0].activated_at)
-          : null
-        const deviceExpireAt = activeActivations.length > 0
-          ? activeActivations.reduce((max: string, da: any) =>
-              (da.expire_at && da.expire_at > max) ? da.expire_at : max, activeActivations[0].expire_at || '')
-          : null
+        const activations = item.device_activations || []
+        const lastActivatedAt = activations
+          .map((da: any) => da.activated_at)
+          .filter(Boolean)
+          .sort()
+          .pop() || null
 
         return {
           ...item,
           last_activated_at: lastActivatedAt,
-          device_expire_at: deviceExpireAt || null,
+          device_expire_at: item.expire_at || null,
           device_activations: undefined
         }
       })
@@ -83,9 +78,61 @@ Deno.serve(async (req) => {
       })
     }
 
-    // POST /admin-codes - 创建单个 / 批量创建 / 批量删除
+    // POST /admin-codes - 创建单个 / 批量创建 / 批量删除 / 续期
     if (req.method === 'POST' && !path) {
       const body = await req.json()
+        // 续期
+      if (body._action === 'renew') {
+        const { id, add_days } = body
+
+        if (!id || !add_days || add_days < 1) {
+          return jsonResponse({ status: false, msg: '参数无效' })
+        }
+
+        const { data: codeData, error: codeError } = await supabase
+          .from('activation_codes')
+          .select('*')
+          .eq('id', id)
+          .single()
+
+        if (codeError || !codeData) {
+          return jsonResponse({ status: false, msg: '激活码不存在' })
+        }
+
+        const now = new Date()
+        const addMs = add_days * 24 * 60 * 60 * 1000
+        const currentExpire = codeData.expire_at ? new Date(codeData.expire_at) : null
+        const baseTime = (currentExpire && currentExpire > now) ? currentExpire : now
+        const newExpire = new Date(baseTime.getTime() + addMs)
+
+        // 计算有效天数 = 新到期时间 - 首次激活时间
+        const { data: firstActivation } = await supabase
+          .from('device_activations')
+          .select('activated_at')
+          .eq('code_id', id)
+          .order('activated_at', { ascending: true })
+          .limit(1)
+          .single()
+
+        const firstActivatedAt = firstActivation?.activated_at ? new Date(firstActivation.activated_at) : now
+        const totalDays = Math.ceil((newExpire.getTime() - firstActivatedAt.getTime()) / (24 * 60 * 60 * 1000))
+
+        await supabase
+          .from('activation_codes')
+          .update({
+            status: 'active',
+            expire_at: newExpire.toISOString(),
+            duration_days: totalDays,
+            updated_at: now.toISOString()
+          })
+          .eq('id', id)
+
+        return jsonResponse({
+          status: true,
+          msg: `续期成功，已延长 ${add_days} 天`,
+          data: { expire_at: newExpire.toISOString() }
+        })
+      }
 
       // 批量删除
       if (body._action === 'batch-delete' || body.ids) {
@@ -206,6 +253,22 @@ Deno.serve(async (req) => {
       if (max_devices !== undefined) updateData.max_devices = max_devices
       updateData.updated_at = new Date().toISOString()
 
+      // 修改有效天数时，同步更新码级到期时间
+      if (duration_days !== undefined) {
+        const { data: oldCode } = await supabase
+          .from('activation_codes')
+          .select('expire_at')
+          .eq('id', id)
+          .single()
+
+        if (oldCode?.expire_at) {
+          const now = new Date()
+          const currentExpire = new Date(oldCode.expire_at)
+          const baseTime = currentExpire > now ? currentExpire : now
+          updateData.expire_at = new Date(baseTime.getTime() + duration_days * 24 * 60 * 60 * 1000).toISOString()
+        }
+      }
+
       const { data, error } = await supabase
         .from('activation_codes')
         .update(updateData)
@@ -217,6 +280,14 @@ Deno.serve(async (req) => {
 
       if (!data) {
         return jsonResponse({ status: false, msg: '激活码不存在' })
+      }
+
+      // 级联更新所有设备的到期时间
+      if (updateData.expire_at) {
+        await supabase
+          .from('device_activations')
+          .update({ expire_at: updateData.expire_at })
+          .eq('code_id', id)
       }
 
       return jsonResponse({ status: true, msg: '更新成功', data })

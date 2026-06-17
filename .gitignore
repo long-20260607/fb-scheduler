@@ -5,3 +5,5 @@
 /server/.env
 /admin/dist/
 /supabase/.temp/
+/supabase/.env
+/server/scripts/seed-test-data.js

@@ -26,8 +26,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '激活码不存在' })
     }
 
-    // 检查激活码状态
-    if (codeData.status !== 'active') {
+    // 检查激活码状态和过期（统一用码级 expire_at）
+    const now = new Date()
+    const isExpired = codeData.status !== 'active' || (codeData.expire_at && new Date(codeData.expire_at) < now)
+    if (isExpired) {
+      if (codeData.expire_at && new Date(codeData.expire_at) < now && codeData.status !== 'expired') {
+        await supabase.from('activation_codes').update({ status: 'expired' }).eq('id', codeData.id)
+      }
       await logAction(supabase, 'check', code, fingerId, req, 'failed', '激活码已失效')
       return jsonResponse({ status: false, msg: '激活码已失效' })
     }
@@ -38,7 +43,6 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('code_id', codeData.id)
       .eq('finger_id', fingerId)
-      .eq('status', 'active')
       .single()
 
     if (!deviceData) {
@@ -46,17 +50,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '设备未激活' })
     }
 
-    // 检查设备级过期时间
-    if (deviceData.expire_at && new Date(deviceData.expire_at) < new Date()) {
-      await supabase.from('device_activations').update({ status: 'inactive' }).eq('id', deviceData.id)
-      await logAction(supabase, 'check', code, fingerId, req, 'failed', '激活已过期')
-      return jsonResponse({ status: false, msg: '激活已过期' })
-    }
-
     return jsonResponse({
       status: true,
       msg: '激活有效',
-      data: deviceData.expire_at
+      data: codeData.expire_at || deviceData.expire_at
     })
   } catch (error) {
     console.error('检查激活状态失败:', error)

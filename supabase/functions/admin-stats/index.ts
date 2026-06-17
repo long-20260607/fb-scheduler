@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const [codesCount, activeCodesCount, activeDevicesCount, todayActivations] = await Promise.all([
       supabase.from('activation_codes').select('*', { count: 'exact', head: true }),
       supabase.from('activation_codes').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase.from('device_activations').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('device_activations').select('*', { count: 'exact', head: true }),
       supabase.from('activation_logs')
         .select('*', { count: 'exact', head: true })
         .eq('action', 'activate')

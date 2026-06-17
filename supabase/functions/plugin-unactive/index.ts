@@ -26,13 +26,12 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '激活码不存在' })
     }
 
-    // 查找激活记录
+    // 查找并删除激活记录
     const { data: activationData } = await supabase
       .from('device_activations')
       .select('*')
       .eq('code_id', codeData.id)
       .eq('finger_id', fingerId)
-      .eq('status', 'active')
       .single()
 
     if (!activationData) {
@@ -40,10 +39,9 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '未找到激活记录' })
     }
 
-    // 更新激活状态为非活跃
     await supabase
       .from('device_activations')
-      .update({ status: 'inactive' })
+      .delete()
       .eq('id', activationData.id)
 
     await logAction(supabase, 'deactivate', code, fingerId, req, 'success', '取消激活成功')

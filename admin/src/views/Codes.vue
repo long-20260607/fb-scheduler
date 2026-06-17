@@ -91,16 +91,18 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button
+              v-if="row.status !== 'expired'"
               size="small"
               :type="row.status === 'active' ? 'warning' : 'success'"
               @click="handleToggleStatus(row)"
             >
               {{ row.status === 'active' ? '禁用' : '启用' }}
             </el-button>
+            <el-button size="small" type="primary" @click="handleRenew(row)">续期</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -167,14 +169,10 @@
     </el-dialog>
 
     <!-- 编辑对话框 -->
-    <el-dialog v-model="showEditDialog" title="编辑激活码" width="500px">
+    <el-dialog v-model="showEditDialog" title="编辑激活码" width="400px">
       <el-form ref="editFormRef" :model="editForm" label-width="100px">
         <el-form-item label="激活码">
           <el-input :value="editForm.code" disabled />
-        </el-form-item>
-        <el-form-item label="有效天数">
-          <el-input-number v-model="editForm.duration_days" :min="1" :max="3650" />
-          <span style="margin-left: 10px; color: #909399">激活后开始计算</span>
         </el-form-item>
         <el-form-item label="最大设备数">
           <el-input-number v-model="editForm.max_devices" :min="1" :max="100" />
@@ -185,6 +183,22 @@
         <el-button type="primary" @click="handleUpdate" :loading="updating">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 续期对话框 -->
+    <el-dialog v-model="showRenewDialog" title="续期激活码" width="400px">
+      <el-form label-width="100px">
+        <el-form-item label="激活码">
+          <el-input :value="renewForm.code" disabled />
+        </el-form-item>
+        <el-form-item label="续期天数">
+          <el-input-number v-model="renewForm.add_days" :min="1" :max="3650" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRenewDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleRenewSubmit" :loading="renewing">确定续期</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -192,11 +206,12 @@
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
-import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes } from '../api'
+import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes, renewCode } from '../api'
 
 const loading = ref(false)
 const creating = ref(false)
 const updating = ref(false)
+const renewing = ref(false)
 const codes = ref([])
 const total = ref(0)
 const currentPage = ref(1)
@@ -208,6 +223,8 @@ const selectedRows = ref([])
 const showCreateDialog = ref(false)
 const showBatchDialog = ref(false)
 const showEditDialog = ref(false)
+const showRenewDialog = ref(false)
+const renewForm = reactive({ id: '', code: '', add_days: 30 })
 
 const createFormRef = ref(null)
 const batchFormRef = ref(null)
@@ -229,7 +246,6 @@ const batchForm = reactive({
 const editForm = reactive({
   id: '',
   code: '',
-  duration_days: 30,
   max_devices: 1
 })
 
@@ -339,7 +355,6 @@ const handleBatchCreate = async () => {
 const handleEdit = (row) => {
   editForm.id = row.id
   editForm.code = row.code
-  editForm.duration_days = row.duration_days || 30
   editForm.max_devices = row.max_devices
   showEditDialog.value = true
 }
@@ -348,7 +363,6 @@ const handleUpdate = async () => {
   updating.value = true
   try {
     const res = await updateCode(editForm.id, {
-      duration_days: editForm.duration_days,
       max_devices: editForm.max_devices
     })
     if (res.status) {
@@ -424,6 +438,29 @@ const handleBatchDelete = async () => {
     if (error !== 'cancel') {
       console.error('批量删除失败:', error)
     }
+  }
+}
+
+const handleRenew = (row) => {
+  renewForm.id = row.id
+  renewForm.code = row.code
+  renewForm.add_days = 30
+  showRenewDialog.value = true
+}
+
+const handleRenewSubmit = async () => {
+  renewing.value = true
+  try {
+    const res = await renewCode(renewForm.id, renewForm.add_days)
+    if (res.status) {
+      ElMessage.success(res.msg)
+      showRenewDialog.value = false
+      fetchCodes()
+    }
+  } catch (error) {
+    console.error('续期失败:', error)
+  } finally {
+    renewing.value = false
   }
 }
 
