@@ -44,51 +44,29 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '激活码已过期' })
     }
 
-    // 检查设备数量限制
-    const { count: activeCount } = await supabase
-      .from('device_activations')
-      .select('*', { count: 'exact', head: true })
-      .eq('code_id', codeData.id)
-      .eq('status', 'active')
-
-    if (activeCount && activeCount >= codeData.max_devices) {
-      // 检查当前设备是否已激活
-      const { data: existingDevice } = await supabase
-        .from('device_activations')
-        .select('*')
-        .eq('code_id', codeData.id)
-        .eq('finger_id', fingerId)
-        .eq('status', 'active')
-        .single()
-
-      if (!existingDevice) {
-        await logAction(supabase, 'activate', code, fingerId, req, 'failed', '已达到最大设备数限制')
-        return jsonResponse({ status: false, msg: '已达到最大设备数限制' })
-      }
-    }
-
-    // 检查设备是否已激活
-    const { data: existingActivation } = await supabase
+    // 查询当前激活码的所有活跃设备
+    const { data: activeDevices } = await supabase
       .from('device_activations')
       .select('*')
       .eq('code_id', codeData.id)
-      .eq('finger_id', fingerId)
       .eq('status', 'active')
-      .single()
+
+    const devices = activeDevices || []
+    const existingActivation = devices.find(d => d.finger_id === fingerId)
 
     if (existingActivation) {
-      // 已激活，更新最后检查时间
-      await supabase
-        .from('device_activations')
-        .update({ last_check_at: new Date().toISOString() })
-        .eq('id', existingActivation.id)
-
-      await logAction(supabase, 'activate', code, fingerId, req, 'success', '设备已激活')
+      // 已激活，直接返回
       return jsonResponse({
         status: true,
         msg: '设备已激活',
         data: existingActivation.expire_at
       })
+    }
+
+    // 检查设备数量限制
+    if (devices.length >= codeData.max_devices) {
+      await logAction(supabase, 'activate', code, fingerId, req, 'failed', '已达到最大设备数限制')
+      return jsonResponse({ status: false, msg: '已达到最大设备数限制' })
     }
 
     // 计算设备过期时间：以激活时间为起点 + duration_days

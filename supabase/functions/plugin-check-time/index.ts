@@ -53,14 +53,6 @@ Deno.serve(async (req) => {
       return jsonResponse({ status: false, msg: '激活已过期' })
     }
 
-    // 更新最后检查时间
-    await supabase
-      .from('device_activations')
-      .update({ last_check_at: new Date().toISOString() })
-      .eq('id', deviceData.id)
-
-    await logAction(supabase, 'check', code, fingerId, req, 'success', '激活有效')
-
     return jsonResponse({
       status: true,
       msg: '激活有效',
