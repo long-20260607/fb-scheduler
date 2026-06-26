@@ -1,8 +1,9 @@
 import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -11,13 +12,13 @@ Deno.serve(async (req) => {
     // 验证 token
     const authHeader = req.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return jsonResponse({ status: false, msg: '未授权' }, 401)
+      return jsonResponse({ status: false, msg: '未授权' }, 401, origin)
     }
 
     const token = authHeader.replace('Bearer ', '')
     const payload = await verifyToken(token)
     if (!payload) {
-      return jsonResponse({ status: false, msg: 'token 无效或已过期' }, 401)
+      return jsonResponse({ status: false, msg: 'token 无效或已过期' }, 401, origin)
     }
 
     // 获取统计数据
@@ -63,9 +64,9 @@ Deno.serve(async (req) => {
         todayActivations: todayActivations.count || 0,
         trend
       }
-    })
+    }, 200, origin)
   } catch (error) {
     console.error('获取统计数据失败:', error)
-    return jsonResponse({ status: false, msg: '获取失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '获取失败' }, 500, origin)
   }
 })

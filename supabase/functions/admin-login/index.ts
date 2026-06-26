@@ -1,7 +1,10 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.1/mod.ts'
 
-const JWT_SECRET = Deno.env.get('JWT_SECRET') || 'fb-scheduler-secret-2024-xK9mP2vL'
+const JWT_SECRET = Deno.env.get('JWT_SECRET')
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is not set')
+}
 
 async function getKey() {
   const encoder = new TextEncoder()
@@ -27,8 +30,9 @@ async function comparePassword(password: string, hash: string): Promise<boolean>
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -36,7 +40,7 @@ Deno.serve(async (req) => {
     const { username, password } = await req.json()
 
     if (!username || !password) {
-      return jsonResponse({ status: false, msg: '请输入用户名和密码' })
+      return jsonResponse({ status: false, msg: '请输入用户名和密码' }, 200, origin)
     }
 
     // 查询管理员
@@ -47,14 +51,14 @@ Deno.serve(async (req) => {
       .single()
 
     if (error || !admin) {
-      return jsonResponse({ status: false, msg: '用户名或密码错误' })
+      return jsonResponse({ status: false, msg: '用户名或密码错误' }, 200, origin)
     }
 
     // 验证密码
     const isValid = await comparePassword(password, admin.password_hash)
 
     if (!isValid) {
-      return jsonResponse({ status: false, msg: '用户名或密码错误' })
+      return jsonResponse({ status: false, msg: '用户名或密码错误' }, 200, origin)
     }
 
     // 生成 JWT
@@ -69,9 +73,9 @@ Deno.serve(async (req) => {
       status: true,
       msg: '登录成功',
       data: { token, username: admin.username }
-    })
+    }, 200, origin)
   } catch (error) {
     console.error('登录失败:', error)
-    return jsonResponse({ status: false, msg: '登录失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '登录失败' }, 500, origin)
   }
 })

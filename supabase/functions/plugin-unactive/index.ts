@@ -1,8 +1,9 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -11,7 +12,7 @@ Deno.serve(async (req) => {
 
     if (!fingerId || !code) {
       await logAction(supabase, 'deactivate', code, fingerId, req, 'failed', '参数不完整')
-      return jsonResponse({ status: false, msg: '参数不完整' })
+      return jsonResponse({ status: false, msg: '参数不完整' }, 200, origin)
     }
 
     // 查询激活码
@@ -23,7 +24,7 @@ Deno.serve(async (req) => {
 
     if (codeError || !codeData) {
       await logAction(supabase, 'deactivate', code, fingerId, req, 'failed', '激活码不存在')
-      return jsonResponse({ status: false, msg: '激活码不存在' })
+      return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
     }
 
     // 查找并删除激活记录
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
 
     if (!activationData) {
       await logAction(supabase, 'deactivate', code, fingerId, req, 'failed', '未找到激活记录')
-      return jsonResponse({ status: false, msg: '未找到激活记录' })
+      return jsonResponse({ status: false, msg: '未找到激活记录' }, 200, origin)
     }
 
     await supabase
@@ -46,10 +47,10 @@ Deno.serve(async (req) => {
 
     await logAction(supabase, 'deactivate', code, fingerId, req, 'success', '取消激活成功')
 
-    return jsonResponse({ status: true, msg: '取消激活成功' })
+    return jsonResponse({ status: true, msg: '取消激活成功' }, 200, origin)
   } catch (error) {
     console.error('取消激活失败:', error)
-    return jsonResponse({ status: false, msg: '取消激活失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '取消激活失败' }, 500, origin)
   }
 })
 

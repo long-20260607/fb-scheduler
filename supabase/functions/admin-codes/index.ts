@@ -8,8 +8,9 @@ function genCode(prefix: string = ''): string {
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -18,13 +19,13 @@ Deno.serve(async (req) => {
     // 验证 token
     const authHeader = req.headers.get('authorization')
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return jsonResponse({ status: false, msg: '未授权' }, 401)
+      return jsonResponse({ status: false, msg: '未授权' }, 401, origin)
     }
 
     const token = authHeader.replace('Bearer ', '')
     const payload = await verifyToken(token)
     if (!payload) {
-      return jsonResponse({ status: false, msg: 'token 无效或已过期' }, 401)
+      return jsonResponse({ status: false, msg: 'token 无效或已过期' }, 401, origin)
     }
 
     const url = new URL(req.url)
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
       return jsonResponse({
         status: true,
         data: { list, total: count || 0, page, pageSize }
-      })
+      }, 200, origin)
     }
 
     // POST /admin-codes - 创建单个 / 批量创建 / 批量删除 / 续期
@@ -86,7 +87,7 @@ Deno.serve(async (req) => {
         const { id, add_days } = body
 
         if (!id || !add_days || add_days < 1) {
-          return jsonResponse({ status: false, msg: '参数无效' })
+          return jsonResponse({ status: false, msg: '参数无效' }, 200, origin)
         }
 
         const { data: codeData, error: codeError } = await supabase
@@ -96,7 +97,7 @@ Deno.serve(async (req) => {
           .single()
 
         if (codeError || !codeData) {
-          return jsonResponse({ status: false, msg: '激活码不存在' })
+          return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
         }
 
         const now = new Date()
@@ -131,7 +132,7 @@ Deno.serve(async (req) => {
           status: true,
           msg: `续期成功，已延长 ${add_days} 天`,
           data: { expire_at: newExpire.toISOString() }
-        })
+        }, 200, origin)
       }
 
       // 批量删除
@@ -139,11 +140,11 @@ Deno.serve(async (req) => {
         const { ids } = body
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
-          return jsonResponse({ status: false, msg: '请选择要删除的激活码' })
+          return jsonResponse({ status: false, msg: '请选择要删除的激活码' }, 200, origin)
         }
 
         if (ids.length > 100) {
-          return jsonResponse({ status: false, msg: '单次最多删除 100 条' })
+          return jsonResponse({ status: false, msg: '单次最多删除 100 条' }, 200, origin)
         }
 
         const { error, count } = await supabase
@@ -156,7 +157,7 @@ Deno.serve(async (req) => {
         return jsonResponse({
           status: true,
           msg: `成功删除 ${count || ids.length} 个激活码`
-        })
+        }, 200, origin)
       }
 
       // 批量创建
@@ -164,7 +165,7 @@ Deno.serve(async (req) => {
         const { count = 1, prefix = '', duration_days = 30, max_devices = 1 } = body
 
         if (!count || count < 1 || count > 100) {
-          return jsonResponse({ status: false, msg: '数量范围 1-100' })
+          return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
         }
 
         const codes = []
@@ -183,14 +184,14 @@ Deno.serve(async (req) => {
           status: true,
           msg: `成功创建 ${count} 个激活码（激活后 ${duration_days} 天有效）`,
           data: { codes: data?.map(c => c.code), duration_days }
-        })
+        }, 200, origin)
       }
 
       // 单个创建
       const { code, duration_days = 30, max_devices = 1 } = body
 
       if (!code) {
-        return jsonResponse({ status: false, msg: '请输入激活码' })
+        return jsonResponse({ status: false, msg: '请输入激活码' }, 200, origin)
       }
 
       const { data: existing } = await supabase
@@ -200,7 +201,7 @@ Deno.serve(async (req) => {
         .single()
 
       if (existing) {
-        return jsonResponse({ status: false, msg: '激活码已存在' })
+        return jsonResponse({ status: false, msg: '激活码已存在' }, 200, origin)
       }
 
       const { data, error } = await supabase
@@ -211,7 +212,7 @@ Deno.serve(async (req) => {
 
       if (error) throw error
 
-      return jsonResponse({ status: true, msg: '创建成功', data })
+      return jsonResponse({ status: true, msg: '创建成功', data }, 200, origin)
     }
 
     // POST /admin-codes/quick - 快速创建
@@ -219,7 +220,7 @@ Deno.serve(async (req) => {
       const { count = 1, max_devices = 1, duration_days = 30, prefix = '' } = await req.json()
 
       if (count < 1 || count > 100) {
-        return jsonResponse({ status: false, msg: '数量范围 1-100' })
+        return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
       }
 
       const codes = []
@@ -238,7 +239,7 @@ Deno.serve(async (req) => {
         status: true,
         msg: `成功创建 ${count} 个激活码（激活后 ${duration_days} 天有效）`,
         data: { codes: data?.map(c => c.code), duration_days, max_devices }
-      })
+      }, 200, origin)
     }
 
     // PUT /admin-codes/:id - 更新
@@ -279,7 +280,7 @@ Deno.serve(async (req) => {
       if (error) throw error
 
       if (!data) {
-        return jsonResponse({ status: false, msg: '激活码不存在' })
+        return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
       }
 
       // 级联更新所有设备的到期时间
@@ -290,7 +291,7 @@ Deno.serve(async (req) => {
           .eq('code_id', id)
       }
 
-      return jsonResponse({ status: true, msg: '更新成功', data })
+      return jsonResponse({ status: true, msg: '更新成功', data }, 200, origin)
     }
 
     // DELETE /admin-codes/:id - 删除
@@ -307,15 +308,15 @@ Deno.serve(async (req) => {
       if (error) throw error
 
       if (!data) {
-        return jsonResponse({ status: false, msg: '激活码不存在' })
+        return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
       }
 
-      return jsonResponse({ status: true, msg: '删除成功' })
+      return jsonResponse({ status: true, msg: '删除成功' }, 200, origin)
     }
 
-    return jsonResponse({ status: false, msg: '未知操作' }, 400)
+    return jsonResponse({ status: false, msg: '未知操作' }, 400, origin)
   } catch (error) {
     console.error('操作失败:', error)
-    return jsonResponse({ status: false, msg: '操作失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '操作失败' }, 500, origin)
   }
 })

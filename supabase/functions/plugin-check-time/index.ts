@@ -1,8 +1,9 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -11,7 +12,7 @@ Deno.serve(async (req) => {
 
     if (!fingerId || !code) {
       await logAction(supabase, 'check', code, fingerId, req, 'failed', '参数不完整')
-      return jsonResponse({ status: false, msg: '参数不完整' })
+      return jsonResponse({ status: false, msg: '参数不完整' }, 200, origin)
     }
 
     // 查询激活码
@@ -23,7 +24,7 @@ Deno.serve(async (req) => {
 
     if (codeError || !codeData) {
       await logAction(supabase, 'check', code, fingerId, req, 'failed', '激活码不存在')
-      return jsonResponse({ status: false, msg: '激活码不存在' })
+      return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
     }
 
     // 检查激活码状态和过期（统一用码级 expire_at）
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
         await supabase.from('activation_codes').update({ status: 'expired' }).eq('id', codeData.id)
       }
       await logAction(supabase, 'check', code, fingerId, req, 'failed', '激活码已失效')
-      return jsonResponse({ status: false, msg: '激活码已失效' })
+      return jsonResponse({ status: false, msg: '激活码已失效' }, 200, origin)
     }
 
     // 查找激活记录
@@ -47,17 +48,17 @@ Deno.serve(async (req) => {
 
     if (!deviceData) {
       await logAction(supabase, 'check', code, fingerId, req, 'failed', '设备未激活')
-      return jsonResponse({ status: false, msg: '设备未激活' })
+      return jsonResponse({ status: false, msg: '设备未激活' }, 200, origin)
     }
 
     return jsonResponse({
       status: true,
       msg: '激活有效',
       data: codeData.expire_at || deviceData.expire_at
-    })
+    }, 200, origin)
   } catch (error) {
     console.error('检查激活状态失败:', error)
-    return jsonResponse({ status: false, msg: '检查失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '检查失败' }, 500, origin)
   }
 })
 

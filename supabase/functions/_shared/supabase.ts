@@ -7,9 +7,22 @@ export function getSupabaseClient() {
   )
 }
 
-export function corsHeaders(origin: string = '*') {
+export function corsHeaders(requestOrigin?: string) {
+  const allowedOrigins = (Deno.env.get('ALLOWED_ORIGINS') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  // 如果没配置白名单，默认允许所有（兼容旧逻辑）
+  let allowedOrigin = '*'
+  if (allowedOrigins.length > 0) {
+    allowedOrigin = (requestOrigin && allowedOrigins.includes(requestOrigin))
+      ? requestOrigin
+      : allowedOrigins[0]
+  }
+
   return {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, GET, PUT, DELETE, OPTIONS',
   }
@@ -23,7 +36,10 @@ function base64UrlDecode(str: string): Uint8Array {
 }
 
 export async function verifyToken(token: string): Promise<any> {
-  const JWT_SECRET = Deno.env.get('JWT_SECRET') || 'fb-scheduler-secret-2024-xK9mP2vL'
+  const JWT_SECRET = Deno.env.get('JWT_SECRET')
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is not set')
+  }
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey(
     'raw',
@@ -49,9 +65,9 @@ export async function verifyToken(token: string): Promise<any> {
   }
 }
 
-export function jsonResponse(data: any, status = 200) {
+export function jsonResponse(data: any, status = 200, requestOrigin?: string) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(requestOrigin) },
   })
 }

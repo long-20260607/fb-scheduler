@@ -1,8 +1,9 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   try {
@@ -11,7 +12,7 @@ Deno.serve(async (req) => {
 
     if (!fingerId || !code) {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '参数不完整')
-      return jsonResponse({ status: false, msg: '参数不完整' })
+      return jsonResponse({ status: false, msg: '参数不完整' }, 200, origin)
     }
 
     // 查询激活码
@@ -23,13 +24,13 @@ Deno.serve(async (req) => {
 
     if (codeError || !codeData) {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '激活码不存在')
-      return jsonResponse({ status: false, msg: '激活码不存在' })
+      return jsonResponse({ status: false, msg: '激活码不存在' }, 200, origin)
     }
 
     // 检查激活码状态
     if (codeData.status === 'disabled') {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '激活码已禁用')
-      return jsonResponse({ status: false, msg: '激活码已禁用' })
+      return jsonResponse({ status: false, msg: '激活码已禁用' }, 200, origin)
     }
 
     // 检查激活码是否过期（status 或 expire_at 任一判定过期都拦截）
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
         await supabase.from('activation_codes').update({ status: 'expired' }).eq('id', codeData.id)
       }
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '激活码已过期')
-      return jsonResponse({ status: false, msg: '激活码已过期' })
+      return jsonResponse({ status: false, msg: '激活码已过期' }, 200, origin)
     }
 
     // 查询当前激活码的所有设备
@@ -57,13 +58,13 @@ Deno.serve(async (req) => {
         status: true,
         msg: '设备已激活',
         data: codeData.expire_at || existingActivation.expire_at
-      })
+      }, 200, origin)
     }
 
     // 检查设备数量限制
     if (devices.length >= codeData.max_devices) {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '已达到最大设备数限制')
-      return jsonResponse({ status: false, msg: '已达到最大设备数限制' })
+      return jsonResponse({ status: false, msg: '已达到最大设备数限制' }, 200, origin)
     }
 
     // 计算到期时间：首次激活时设置码级 expire_at，后续设备共享
@@ -91,10 +92,10 @@ Deno.serve(async (req) => {
       status: true,
       msg: '激活成功',
       data: expireAt
-    })
+    }, 200, origin)
   } catch (error) {
     console.error('激活失败:', error)
-    return jsonResponse({ status: false, msg: '激活失败: ' + error.message }, 500)
+    return jsonResponse({ status: false, msg: '激活失败' }, 500, origin)
   }
 })
 
