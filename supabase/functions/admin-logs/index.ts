@@ -1,9 +1,18 @@
 import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
+import { getClientIp, checkRateLimit } from '../_shared/rate-limit.ts'
+import { sanitizeKeyword, clampNumber } from '../_shared/validate.ts'
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders(origin) })
+  }
+
+  // 速率限制
+  const ip = getClientIp(req)
+  const { allowed } = checkRateLimit(ip, 60)
+  if (!allowed) {
+    return jsonResponse({ status: false, msg: '请求过于频繁，请稍后再试' }, 429, origin)
   }
 
   try {
@@ -22,8 +31,8 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url)
-    const page = parseInt(url.searchParams.get('page') || '1')
-    const pageSize = parseInt(url.searchParams.get('pageSize') || '50')
+    const page = clampNumber(url.searchParams.get('page'), 1, 9999, 1)
+    const pageSize = clampNumber(url.searchParams.get('pageSize'), 1, 100, 50)
     const action = url.searchParams.get('action')
     const result = url.searchParams.get('result')
     const keyword = url.searchParams.get('keyword')
@@ -35,7 +44,8 @@ Deno.serve(async (req) => {
     if (action) query = query.eq('action', action)
     if (result) query = query.eq('result', result)
     if (keyword) {
-      query = query.or(`code.ilike.%${keyword}%,finger_id.ilike.%${keyword}%`)
+      const kw = sanitizeKeyword(keyword)
+      query = query.or(`code.ilike.%${kw}%,finger_id.ilike.%${kw}%`)
     }
 
     query = query

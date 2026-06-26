@@ -1,5 +1,7 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
 import { create, getNumericDate } from 'https://deno.land/x/djwt@v3.0.1/mod.ts'
+import { getClientIp, checkRateLimit } from '../_shared/rate-limit.ts'
+import { isValidUsername, isValidPassword } from '../_shared/validate.ts'
 
 const JWT_SECRET = Deno.env.get('JWT_SECRET')
 if (!JWT_SECRET) {
@@ -35,11 +37,18 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders(origin) })
   }
 
+  // 速率限制（登录接口更严格，防暴力破解）
+  const ip = getClientIp(req)
+  const { allowed, remaining } = checkRateLimit(ip, 10)
+  if (!allowed) {
+    return jsonResponse({ status: false, msg: '请求过于频繁，请稍后再试' }, 429, origin)
+  }
+
   try {
     const supabase = getSupabaseClient()
     const { username, password } = await req.json()
 
-    if (!username || !password) {
+    if (!username || !password || !isValidUsername(username) || !isValidPassword(password)) {
       return jsonResponse({ status: false, msg: '请输入用户名和密码' }, 200, origin)
     }
 

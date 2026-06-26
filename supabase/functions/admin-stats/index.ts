@@ -1,9 +1,17 @@
 import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
+import { getClientIp, checkRateLimit } from '../_shared/rate-limit.ts'
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders(origin) })
+  }
+
+  // 速率限制
+  const ip = getClientIp(req)
+  const { allowed } = checkRateLimit(ip, 60)
+  if (!allowed) {
+    return jsonResponse({ status: false, msg: '请求过于频繁，请稍后再试' }, 429, origin)
   }
 
   try {

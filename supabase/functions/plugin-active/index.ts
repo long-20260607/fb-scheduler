@@ -1,4 +1,6 @@
 import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
+import { getClientIp, checkRateLimit } from '../_shared/rate-limit.ts'
+import { isValidCode, isValidFingerId } from '../_shared/validate.ts'
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
@@ -6,11 +8,18 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders(origin) })
   }
 
+  // 速率限制
+  const ip = getClientIp(req)
+  const { allowed, remaining } = checkRateLimit(ip, 30)
+  if (!allowed) {
+    return jsonResponse({ status: false, msg: '请求过于频繁，请稍后再试' }, 429, origin)
+  }
+
   try {
     const supabase = getSupabaseClient()
     const { fingerId, code } = await req.json()
 
-    if (!fingerId || !code) {
+    if (!fingerId || !code || !isValidCode(code) || !isValidFingerId(fingerId)) {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '参数不完整')
       return jsonResponse({ status: false, msg: '参数不完整' }, 200, origin)
     }

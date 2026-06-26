@@ -1,4 +1,6 @@
 import { getSupabaseClient, corsHeaders, jsonResponse, verifyToken } from '../_shared/supabase.ts'
+import { getClientIp, checkRateLimit } from '../_shared/rate-limit.ts'
+import { isValidUuid, sanitizeKeyword, clampNumber } from '../_shared/validate.ts'
 
 // 生成激活码
 function genCode(prefix: string = ''): string {
@@ -11,6 +13,13 @@ Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders(origin) })
+  }
+
+  // 速率限制
+  const ip = getClientIp(req)
+  const { allowed } = checkRateLimit(ip, 60)
+  if (!allowed) {
+    return jsonResponse({ status: false, msg: '请求过于频繁，请稍后再试' }, 429, origin)
   }
 
   try {
@@ -37,8 +46,8 @@ Deno.serve(async (req) => {
 
     // GET /admin-codes - 获取列表
     if (req.method === 'GET' && !path) {
-      const page = parseInt(url.searchParams.get('page') || '1')
-      const pageSize = parseInt(url.searchParams.get('pageSize') || '20')
+      const page = clampNumber(url.searchParams.get('page'), 1, 9999, 1)
+      const pageSize = clampNumber(url.searchParams.get('pageSize'), 1, 100, 20)
       const status = url.searchParams.get('status')
       const keyword = url.searchParams.get('keyword')
 
@@ -47,7 +56,7 @@ Deno.serve(async (req) => {
         .select('*, device_activations!left(activated_at)', { count: 'exact' })
 
       if (status) query = query.eq('status', status)
-      if (keyword) query = query.ilike('code', `%${keyword}%`)
+      if (keyword) query = query.ilike('code', `%${sanitizeKeyword(keyword)}%`)
 
       query = query
         .order('created_at', { ascending: false })
@@ -86,7 +95,11 @@ Deno.serve(async (req) => {
       if (body._action === 'renew') {
         const { id, add_days } = body
 
-        if (!id || !add_days || add_days < 1) {
+        if (!id || !isValidUuid(id)) {
+          return jsonResponse({ status: false, msg: '参数无效' }, 200, origin)
+        }
+        const addDays = clampNumber(add_days, 1, 365, 0)
+        if (!addDays) {
           return jsonResponse({ status: false, msg: '参数无效' }, 200, origin)
         }
 
@@ -101,7 +114,7 @@ Deno.serve(async (req) => {
         }
 
         const now = new Date()
-        const addMs = add_days * 24 * 60 * 60 * 1000
+        const addMs = addDays * 24 * 60 * 60 * 1000
         const currentExpire = codeData.expire_at ? new Date(codeData.expire_at) : null
         const baseTime = (currentExpire && currentExpire > now) ? currentExpire : now
         const newExpire = new Date(baseTime.getTime() + addMs)
@@ -130,7 +143,7 @@ Deno.serve(async (req) => {
 
         return jsonResponse({
           status: true,
-          msg: `续期成功，已延长 ${add_days} 天`,
+          msg: `续期成功，已延长 ${addDays} 天`,
           data: { expire_at: newExpire.toISOString() }
         }, 200, origin)
       }
@@ -145,6 +158,10 @@ Deno.serve(async (req) => {
 
         if (ids.length > 100) {
           return jsonResponse({ status: false, msg: '单次最多删除 100 条' }, 200, origin)
+        }
+
+        if (!ids.every((id: string) => isValidUuid(id))) {
+          return jsonResponse({ status: false, msg: 'ID 格式无效' }, 200, origin)
         }
 
         const { error, count } = await supabase
@@ -162,7 +179,9 @@ Deno.serve(async (req) => {
 
       // 批量创建
       if (body._action === 'batch' || body.count > 1) {
-        const { count = 1, prefix = '', duration_days = 30, max_devices = 1 } = body
+        const { count = 1, prefix = '' } = body
+        const duration_days = clampNumber(body.duration_days, 1, 3650, 30)
+        const max_devices = clampNumber(body.max_devices, 1, 100, 1)
 
         if (!count || count < 1 || count > 100) {
           return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
@@ -188,7 +207,9 @@ Deno.serve(async (req) => {
       }
 
       // 单个创建
-      const { code, duration_days = 30, max_devices = 1 } = body
+      const { code } = body
+      const duration_days = clampNumber(body.duration_days, 1, 3650, 30)
+      const max_devices = clampNumber(body.max_devices, 1, 100, 1)
 
       if (!code) {
         return jsonResponse({ status: false, msg: '请输入激活码' }, 200, origin)
@@ -217,7 +238,11 @@ Deno.serve(async (req) => {
 
     // POST /admin-codes/quick - 快速创建
     if (req.method === 'POST' && path === 'quick') {
-      const { count = 1, max_devices = 1, duration_days = 30, prefix = '' } = await req.json()
+      const quickBody = await req.json()
+      const count = quickBody.count ?? 1
+      const prefix = quickBody.prefix ?? ''
+      const duration_days = clampNumber(quickBody.duration_days, 1, 3650, 30)
+      const max_devices = clampNumber(quickBody.max_devices, 1, 100, 1)
 
       if (count < 1 || count > 100) {
         return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
@@ -245,6 +270,9 @@ Deno.serve(async (req) => {
     // PUT /admin-codes/:id - 更新
     if (req.method === 'PUT') {
       const id = url.searchParams.get('id') || path
+      if (!id || !isValidUuid(id)) {
+        return jsonResponse({ status: false, msg: 'ID 格式无效' }, 400, origin)
+      }
       const body = await req.json()
       const { status, duration_days, max_devices } = body
 
@@ -297,6 +325,9 @@ Deno.serve(async (req) => {
     // DELETE /admin-codes/:id - 删除
     if (req.method === 'DELETE') {
       const id = url.searchParams.get('id') || path
+      if (!id || !isValidUuid(id)) {
+        return jsonResponse({ status: false, msg: 'ID 格式无效' }, 400, origin)
+      }
 
       const { data, error } = await supabase
         .from('activation_codes')
