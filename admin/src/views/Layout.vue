@@ -1,29 +1,33 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="200px" class="aside">
+    <el-aside :width="isCollapse ? '64px' : '200px'" class="aside">
       <div class="logo">
-        <h3>FB Scheduler</h3>
+        <h3 v-if="!isCollapse">FB Scheduler</h3>
       </div>
       <el-menu
         :default-active="route.path"
         router
+        :collapse="isCollapse"
         background-color="#304156"
         text-color="#bfcbd9"
         active-text-color="#409eff"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
-          <span>仪表盘</span>
+          <template #title>仪表盘</template>
         </el-menu-item>
         <el-menu-item index="/codes">
           <el-icon><Key /></el-icon>
-          <span>激活码管理</span>
+          <template #title>激活码管理</template>
         </el-menu-item>
         <el-menu-item index="/logs">
           <el-icon><Document /></el-icon>
-          <span>操作日志</span>
+          <template #title>操作日志</template>
         </el-menu-item>
       </el-menu>
+      <div class="collapse-btn" @click="isCollapse = !isCollapse">
+        <el-icon><Fold v-if="!isCollapse" /><Expand v-else /></el-icon>
+      </div>
     </el-aside>
 
     <el-container>
@@ -55,12 +59,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DataBoard, Key, Document, User, ArrowDown } from '@element-plus/icons-vue'
+import { DataBoard, Key, Document, User, ArrowDown, Fold, Expand } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const isCollapse = ref(true) // 默认收缩
 const router = useRouter()
 
 const username = computed(() => localStorage.getItem('username') || 'Admin')
@@ -83,6 +88,22 @@ const handleCommand = (command) => {
 .aside {
   background-color: #304156;
   overflow: hidden;
+  position: relative;
+  transition: width 0.3s;
+}
+
+.collapse-btn {
+  position: absolute;
+  bottom: 20px;
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  color: #bfcbd9;
+  font-size: 20px;
+}
+
+.collapse-btn:hover {
+  color: #409eff;
 }
 
 .logo {

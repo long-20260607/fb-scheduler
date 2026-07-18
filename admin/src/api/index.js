@@ -3,8 +3,10 @@ import { ElMessage } from 'element-plus'
 import router from '../router'
 
 // Supabase Edge Functions 配置
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://hizynzkovnnugjedqpuw.supabase.co'
-const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`
+// 本地开发走 Vite 代理（相对路径），线上走正式域名
+const FUNCTIONS_BASE = import.meta.env.DEV
+  ? '/functions/v1'
+  : `${import.meta.env.VITE_SUPABASE_URL || 'https://hizynzkovnnugjedqpuw.supabase.co'}/functions/v1`
 
 const api = axios.create({
   baseURL: FUNCTIONS_BASE,
