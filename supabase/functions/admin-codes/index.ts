@@ -135,6 +135,26 @@ Deno.serve(async (req) => {
         }, 200, origin)
       }
 
+      // 清除激活码的设备记录
+      if (body._action === 'clear-devices') {
+        const { id } = body
+
+        if (!id) {
+          return jsonResponse({ status: false, msg: '参数无效' }, 200, origin)
+        }
+
+        const { error } = await supabase
+          .from('device_activations')
+          .delete()
+          .eq('code_id', id)
+
+        if (error) {
+          return jsonResponse({ status: false, msg: '清除失败' }, 200, origin)
+        }
+
+        return jsonResponse({ status: true, msg: '设备记录已清除' }, 200, origin)
+      }
+
       // 批量删除
       if (body._action === 'batch-delete' || body.ids) {
         const { ids } = body

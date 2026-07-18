@@ -60,6 +60,7 @@ export const updateCode = (id, data) => api.put(`/admin-codes?id=${id}`, data)
 export const deleteCode = (id) => api.delete(`/admin-codes?id=${id}`)
 export const batchDeleteCodes = (ids) => api.post('/admin-codes', { ids, _action: 'batch-delete' })
 export const renewCode = (id, add_days) => api.post('/admin-codes', { id, add_days, _action: 'renew' })
+export const clearDevices = (id) => api.post('/admin-codes', { id, _action: 'clear-devices' })
 
 // 统计数据
 export const getStats = () => api.get('/admin-stats')

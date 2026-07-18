@@ -91,7 +91,7 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button
@@ -103,6 +103,7 @@
               {{ row.status === 'active' ? '禁用' : '启用' }}
             </el-button>
             <el-button size="small" type="primary" @click="handleRenew(row)">续期</el-button>
+            <el-button size="small" type="warning" @click="handleClearDevices(row)">清除设备</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -206,7 +207,7 @@
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
-import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes, renewCode } from '../api'
+import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes, renewCode, clearDevices } from '../api'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -412,6 +413,26 @@ const handleDelete = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除失败:', error)
+    }
+  }
+}
+
+const handleClearDevices = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要清除激活码 ${row.code} 的所有设备记录吗？清除后用户需重新激活。`,
+      '警告',
+      { type: 'warning' }
+    )
+
+    const res = await clearDevices(row.id)
+    if (res.status) {
+      ElMessage.success('设备记录已清除')
+      fetchCodes()
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('清除失败:', error)
     }
   }
 }
