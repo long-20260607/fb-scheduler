@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
         const baseTime = (currentExpire && currentExpire > now) ? currentExpire : now
         const newExpire = new Date(baseTime.getTime() + addMs)
 
-        // 计算有效天数 = 新到期时间 - 首次激活时间
+        // 计算有效天数 = 到期时间 - 首次激活时间
         const { data: firstActivation } = await supabase
           .from('device_activations')
           .select('activated_at')
@@ -116,7 +116,9 @@ Deno.serve(async (req) => {
           .single()
 
         const firstActivatedAt = firstActivation?.activated_at ? new Date(firstActivation.activated_at) : now
-        const totalDays = Math.ceil((newExpire.getTime() - firstActivatedAt.getTime()) / (24 * 60 * 60 * 1000))
+        const expireDate = new Date(newExpire.getFullYear(), newExpire.getMonth(), newExpire.getDate())
+        const activatedDate = new Date(firstActivatedAt.getFullYear(), firstActivatedAt.getMonth(), firstActivatedAt.getDate())
+        const totalDays = Math.round((expireDate.getTime() - activatedDate.getTime()) / (24 * 60 * 60 * 1000))
 
         await supabase
           .from('activation_codes')
@@ -266,16 +268,17 @@ Deno.serve(async (req) => {
     if (req.method === 'PUT') {
       const id = url.searchParams.get('id') || path
       const body = await req.json()
-      const { status, duration_days, max_devices } = body
+      const { status, duration_days, max_devices, expire_at } = body
 
       const updateData: any = {}
       if (status !== undefined) updateData.status = status
       if (duration_days !== undefined) updateData.duration_days = duration_days
       if (max_devices !== undefined) updateData.max_devices = max_devices
+      if (expire_at !== undefined) updateData.expire_at = expire_at
       updateData.updated_at = new Date().toISOString()
 
-      // 修改有效天数时，同步更新码级到期时间
-      if (duration_days !== undefined) {
+      // 修改有效天数时，同步更新码级到期时间（仅当未直接指定 expire_at 时）
+      if (duration_days !== undefined && expire_at === undefined) {
         const { data: oldCode } = await supabase
           .from('activation_codes')
           .select('expire_at')
@@ -287,6 +290,37 @@ Deno.serve(async (req) => {
           const currentExpire = new Date(oldCode.expire_at)
           const baseTime = currentExpire > now ? currentExpire : now
           updateData.expire_at = new Date(baseTime.getTime() + duration_days * 24 * 60 * 60 * 1000).toISOString()
+        }
+      }
+
+      // 直接修改到期时间时，同步反算有效天数（仅当未直接指定 duration_days 时）
+      if (expire_at !== undefined && duration_days === undefined) {
+        const { data: oldCode } = await supabase
+          .from('activation_codes')
+          .select('expire_at')
+          .eq('id', id)
+          .single()
+
+        if (oldCode?.expire_at) {
+          const currentExpire = new Date(oldCode.expire_at)
+          const newExpire = new Date(expire_at)
+          // 保留原到期时间的时分秒
+          newExpire.setHours(currentExpire.getHours(), currentExpire.getMinutes(), currentExpire.getSeconds())
+          updateData.expire_at = newExpire.toISOString()
+
+          // 有效天数 = 到期时间 - 首次激活时间
+          const { data: firstActivation } = await supabase
+            .from('device_activations')
+            .select('activated_at')
+            .eq('code_id', id)
+            .order('activated_at', { ascending: true })
+            .limit(1)
+            .single()
+
+          const firstActivatedAt = firstActivation?.activated_at ? new Date(firstActivation.activated_at) : new Date()
+          const expireDate = new Date(newExpire.getFullYear(), newExpire.getMonth(), newExpire.getDate())
+          const activatedDate = new Date(firstActivatedAt.getFullYear(), firstActivatedAt.getMonth(), firstActivatedAt.getDate())
+          updateData.duration_days = Math.round((expireDate.getTime() - activatedDate.getTime()) / (24 * 60 * 60 * 1000))
         }
       }
 

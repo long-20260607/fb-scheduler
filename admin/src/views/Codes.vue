@@ -9,8 +9,8 @@
               placeholder="搜索激活码"
               style="width: 200px"
               clearable
-              @clear="fetchCodes"
-              @keyup.enter="fetchCodes"
+              @clear="resetAndFetch"
+              @keyup.enter="resetAndFetch"
             >
               <template #prefix>
                 <el-icon><Search /></el-icon>
@@ -22,7 +22,7 @@
               placeholder="状态筛选"
               style="width: 120px; margin-left: 10px"
               clearable
-              @change="fetchCodes"
+              @change="resetAndFetch"
             >
               <el-option label="有效" value="active" />
               <el-option label="禁用" value="disabled" />
@@ -178,6 +178,9 @@
         <el-form-item label="最大设备数">
           <el-input-number v-model="editForm.max_devices" :min="1" :max="100" />
         </el-form-item>
+        <el-form-item label="到期时间">
+          <el-date-picker v-model="editForm.expire_at" type="date" placeholder="选择到期时间" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
@@ -204,7 +207,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { getCodes, createCode, batchCreateCodes, updateCode, deleteCode, batchDeleteCodes, renewCode, clearDevices } from '../api'
@@ -215,10 +218,14 @@ const updating = ref(false)
 const renewing = ref(false)
 const codes = ref([])
 const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const currentPage = ref(parseInt(sessionStorage.getItem('codes_page') || '1'))
+const pageSize = ref(parseInt(sessionStorage.getItem('codes_pageSize') || '20'))
 const searchKeyword = ref('')
 const searchStatus = ref('')
+
+watch(currentPage, (v) => sessionStorage.setItem('codes_page', v))
+watch(pageSize, (v) => sessionStorage.setItem('codes_pageSize', v))
+
 const selectedRows = ref([])
 
 const showCreateDialog = ref(false)
@@ -247,7 +254,8 @@ const batchForm = reactive({
 const editForm = reactive({
   id: '',
   code: '',
-  max_devices: 1
+  max_devices: 1,
+  expire_at: ''
 })
 
 const createRules = {
@@ -286,6 +294,11 @@ const generateCode = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
   createForm.code = `${seg()}-${seg()}-${seg()}-${seg()}`
+}
+
+const resetAndFetch = () => {
+  currentPage.value = 1
+  fetchCodes()
 }
 
 const fetchCodes = async () => {
@@ -357,15 +370,20 @@ const handleEdit = (row) => {
   editForm.id = row.id
   editForm.code = row.code
   editForm.max_devices = row.max_devices
+  editForm.expire_at = row.expire_at ? row.expire_at.slice(0, 10) : ''
   showEditDialog.value = true
 }
 
 const handleUpdate = async () => {
   updating.value = true
   try {
-    const res = await updateCode(editForm.id, {
+    const payload = {
       max_devices: editForm.max_devices
-    })
+    }
+    if (editForm.expire_at) {
+      payload.expire_at = editForm.expire_at
+    }
+    const res = await updateCode(editForm.id, payload)
     if (res.status) {
       ElMessage.success('更新成功')
       showEditDialog.value = false
