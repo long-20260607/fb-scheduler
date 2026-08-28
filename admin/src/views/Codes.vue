@@ -382,6 +382,9 @@ const handleUpdate = async () => {
     }
     if (editForm.expire_at) {
       payload.expire_at = editForm.expire_at
+      if (new Date(editForm.expire_at) > new Date()) {
+        payload.status = 'active'
+      }
     }
     const res = await updateCode(editForm.id, payload)
     if (res.status) {
