@@ -35,6 +35,9 @@ Deno.serve(async (req) => {
       supabase.from('collector_activation_codes').select('*', { count: 'exact', head: true }).eq('status', 'active'),
       supabase.from('collector_device_activations').select('*', { count: 'exact', head: true })
     ])
+    for (const r of [collectorTotal, collectorActive, collectorDevices]) {
+      if (r.error) console.error('collector 计数查询失败(表未建/权限):', r.error.message)
+    }
 
     // 最近 7 天的激活趋势
     const sevenDaysAgo = new Date()
