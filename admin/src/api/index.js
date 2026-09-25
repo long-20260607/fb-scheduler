@@ -54,15 +54,17 @@ api.interceptors.response.use(
 // 管理员登录
 export const login = (data) => api.post('/admin-login', data)
 
-// 激活码管理
+// 激活码管理（scope 可选：传 'collector' 走采集插件表，不传 = 原表）
+const scopeQs = (scope) => (scope ? `?scope=${encodeURIComponent(scope)}` : '')
+
 export const getCodes = (params) => api.get('/admin-codes', { params })
-export const createCode = (data) => api.post('/admin-codes', data)
-export const batchCreateCodes = (data) => api.post('/admin-codes', { ...data, _action: 'batch' })
-export const updateCode = (id, data) => api.put(`/admin-codes?id=${id}`, data)
-export const deleteCode = (id) => api.delete(`/admin-codes?id=${id}`)
-export const batchDeleteCodes = (ids) => api.post('/admin-codes', { ids, _action: 'batch-delete' })
-export const renewCode = (id, add_days) => api.post('/admin-codes', { id, add_days, _action: 'renew' })
-export const clearDevices = (id) => api.post('/admin-codes', { id, _action: 'clear-devices' })
+export const createCode = (data, scope) => api.post(`/admin-codes${scopeQs(scope)}`, data)
+export const batchCreateCodes = (data, scope) => api.post(`/admin-codes${scopeQs(scope)}`, { ...data, _action: 'batch' })
+export const updateCode = (id, data, scope) => api.put(`/admin-codes?id=${id}${scope ? `&scope=${encodeURIComponent(scope)}` : ''}`, data)
+export const deleteCode = (id, scope) => api.delete(`/admin-codes?id=${id}${scope ? `&scope=${encodeURIComponent(scope)}` : ''}`)
+export const batchDeleteCodes = (ids, scope) => api.post(`/admin-codes${scopeQs(scope)}`, { ids, _action: 'batch-delete' })
+export const renewCode = (id, add_days, scope) => api.post(`/admin-codes${scopeQs(scope)}`, { id, add_days, _action: 'renew' })
+export const clearDevices = (id, scope) => api.post(`/admin-codes${scopeQs(scope)}`, { id, _action: 'clear-devices' })
 
 // 统计数据
 export const getStats = () => api.get('/admin-stats')

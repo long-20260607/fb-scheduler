@@ -20,6 +20,10 @@
           <el-icon><Key /></el-icon>
           <template #title>激活码管理</template>
         </el-menu-item>
+        <el-menu-item index="/collector-codes">
+          <el-icon><Collection /></el-icon>
+          <template #title>主页采集激活码</template>
+        </el-menu-item>
         <el-menu-item index="/logs">
           <el-icon><Document /></el-icon>
           <template #title>操作日志</template>
@@ -62,7 +66,7 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DataBoard, Key, Document, User, ArrowDown, Fold, Expand } from '@element-plus/icons-vue'
+import { DataBoard, Key, Document, User, ArrowDown, Fold, Expand, Collection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const isCollapse = ref(true) // 默认收缩

@@ -24,6 +24,12 @@ const routes = [
         meta: { title: '激活码管理' }
       },
       {
+        path: 'collector-codes',
+        name: 'CollectorCodes',
+        component: () => import('../views/CollectorCodes.vue'),
+        meta: { title: '主页采集激活码' }
+      },
+      {
         path: 'logs',
         name: 'Logs',
         component: () => import('../views/Logs.vue'),
