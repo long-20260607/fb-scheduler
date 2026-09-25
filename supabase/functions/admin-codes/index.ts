@@ -29,6 +29,12 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url)
+    // scope 白名单：仅 'collector' 走采集插件新表，其余一律回退原表（现有插件零影响）
+    let scope = url.searchParams.get('scope') || ''
+    const tableMap = () =>
+      scope === 'collector'
+        ? { codes: 'collector_activation_codes', devices: 'collector_device_activations' }
+        : { codes: 'activation_codes', devices: 'device_activations' }
     const parts = url.pathname.split('/')
     // parts: ['', 'functions', 'v1', 'admin-codes', ...extra...]
     // path = 函数名之后的子路径段，函数名本身不算
@@ -37,14 +43,15 @@ Deno.serve(async (req) => {
 
     // GET /admin-codes - 获取列表
     if (req.method === 'GET' && !path) {
+      const T = tableMap()
       const page = parseInt(url.searchParams.get('page') || '1')
       const pageSize = parseInt(url.searchParams.get('pageSize') || '20')
       const status = url.searchParams.get('status')
       const keyword = url.searchParams.get('keyword')
 
       let query = supabase
-        .from('activation_codes')
-        .select('*, device_activations!left(activated_at)', { count: 'exact' })
+        .from(T.codes)
+        .select(`*, ${T.devices}!left(activated_at)`, { count: 'exact' })
 
       if (status) query = query.eq('status', status)
       if (keyword) query = query.ilike('code', `%${keyword}%`)
@@ -82,6 +89,8 @@ Deno.serve(async (req) => {
     // POST /admin-codes - 创建单个 / 批量创建 / 批量删除 / 续期
     if (req.method === 'POST' && !path) {
       const body = await req.json()
+      if (!scope && body.scope) scope = body.scope
+      const T = tableMap()
         // 续期
       if (body._action === 'renew') {
         const { id, add_days } = body
@@ -91,7 +100,7 @@ Deno.serve(async (req) => {
         }
 
         const { data: codeData, error: codeError } = await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .select('*')
           .eq('id', id)
           .single()
@@ -108,7 +117,7 @@ Deno.serve(async (req) => {
 
         // 计算有效天数 = 到期时间 - 首次激活时间
         const { data: firstActivation } = await supabase
-          .from('device_activations')
+          .from(T.devices)
           .select('activated_at')
           .eq('code_id', id)
           .order('activated_at', { ascending: true })
@@ -121,7 +130,7 @@ Deno.serve(async (req) => {
         const totalDays = Math.round((expireDate.getTime() - activatedDate.getTime()) / (24 * 60 * 60 * 1000))
 
         await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .update({
             status: 'active',
             expire_at: newExpire.toISOString(),
@@ -146,7 +155,7 @@ Deno.serve(async (req) => {
         }
 
         const { error } = await supabase
-          .from('device_activations')
+          .from(T.devices)
           .delete()
           .eq('code_id', id)
 
@@ -170,7 +179,7 @@ Deno.serve(async (req) => {
         }
 
         const { error, count } = await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .delete({ count: 'exact' })
           .in('id', ids)
 
@@ -184,7 +193,8 @@ Deno.serve(async (req) => {
 
       // 批量创建
       if (body._action === 'batch' || body.count > 1) {
-        const { count = 1, prefix = '', duration_days = 30, max_devices = 1 } = body
+        const { count = 1, duration_days = 30, max_devices = 1 } = body
+        const prefix = body.prefix ?? (scope === 'collector' ? 'FPC-' : '')
 
         if (!count || count < 1 || count > 100) {
           return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
@@ -196,7 +206,7 @@ Deno.serve(async (req) => {
         }
 
         const { data, error } = await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .insert(codes)
           .select()
 
@@ -217,7 +227,7 @@ Deno.serve(async (req) => {
       }
 
       const { data: existing } = await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .select('id')
         .eq('code', code)
         .single()
@@ -227,7 +237,7 @@ Deno.serve(async (req) => {
       }
 
       const { data, error } = await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .insert({ code, duration_days, max_devices })
         .select()
         .single()
@@ -239,7 +249,11 @@ Deno.serve(async (req) => {
 
     // POST /admin-codes/quick - 快速创建
     if (req.method === 'POST' && path === 'quick') {
-      const { count = 1, max_devices = 1, duration_days = 30, prefix = '' } = await req.json()
+      const body = await req.json()
+      if (!scope && body.scope) scope = body.scope
+      const T = tableMap()
+      const { count = 1, max_devices = 1, duration_days = 30 } = body
+      const prefix = body.prefix ?? (scope === 'collector' ? 'FPC-' : '')
 
       if (count < 1 || count > 100) {
         return jsonResponse({ status: false, msg: '数量范围 1-100' }, 200, origin)
@@ -251,7 +265,7 @@ Deno.serve(async (req) => {
       }
 
       const { data, error } = await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .insert(codes)
         .select()
 
@@ -266,6 +280,7 @@ Deno.serve(async (req) => {
 
     // PUT /admin-codes/:id - 更新
     if (req.method === 'PUT') {
+      const T = tableMap()
       const id = url.searchParams.get('id') || path
       const body = await req.json()
       const { status, duration_days, max_devices, expire_at } = body
@@ -280,7 +295,7 @@ Deno.serve(async (req) => {
       // 修改有效天数时，同步更新码级到期时间（仅当未直接指定 expire_at 时）
       if (duration_days !== undefined && expire_at === undefined) {
         const { data: oldCode } = await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .select('expire_at')
           .eq('id', id)
           .single()
@@ -296,7 +311,7 @@ Deno.serve(async (req) => {
       // 直接修改到期时间时，同步反算有效天数（仅当未直接指定 duration_days 时）
       if (expire_at !== undefined && duration_days === undefined) {
         const { data: oldCode } = await supabase
-          .from('activation_codes')
+          .from(T.codes)
           .select('expire_at')
           .eq('id', id)
           .single()
@@ -310,7 +325,7 @@ Deno.serve(async (req) => {
 
           // 有效天数 = 到期时间 - 首次激活时间
           const { data: firstActivation } = await supabase
-            .from('device_activations')
+            .from(T.devices)
             .select('activated_at')
             .eq('code_id', id)
             .order('activated_at', { ascending: true })
@@ -325,7 +340,7 @@ Deno.serve(async (req) => {
       }
 
       const { data, error } = await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .update(updateData)
         .eq('id', id)
         .select()
@@ -340,7 +355,7 @@ Deno.serve(async (req) => {
       // 级联更新所有设备的到期时间
       if (updateData.expire_at) {
         await supabase
-          .from('device_activations')
+          .from(T.devices)
           .update({ expire_at: updateData.expire_at })
           .eq('code_id', id)
       }
@@ -350,10 +365,11 @@ Deno.serve(async (req) => {
 
     // DELETE /admin-codes/:id - 删除
     if (req.method === 'DELETE') {
+      const T = tableMap()
       const id = url.searchParams.get('id') || path
 
       const { data, error } = await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .delete()
         .eq('id', id)
         .select()
