@@ -59,7 +59,7 @@
               <el-icon><Key /></el-icon>
             </div>
           </template>
-          <div class="stat-value">{{ stats.collector.total }}</div>
+          <div class="stat-value">{{ stats.collector?.total ?? 0 }}</div>
         </el-card>
       </el-col>
 
@@ -71,7 +71,7 @@
               <el-icon><CircleCheck /></el-icon>
             </div>
           </template>
-          <div class="stat-value success">{{ stats.collector.active }}</div>
+          <div class="stat-value success">{{ stats.collector?.active ?? 0 }}</div>
         </el-card>
       </el-col>
     </el-row>
