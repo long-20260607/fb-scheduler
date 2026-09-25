@@ -51,6 +51,32 @@
     </el-row>
 
     <el-row :gutter="20" style="margin-top: 20px">
+      <el-col :span="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>采集插件 · 激活码总数</span>
+              <el-icon><Key /></el-icon>
+            </div>
+          </template>
+          <div class="stat-value">{{ stats.collector.total }}</div>
+        </el-card>
+      </el-col>
+
+      <el-col :span="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>采集插件 · 有效激活码</span>
+              <el-icon><CircleCheck /></el-icon>
+            </div>
+          </template>
+          <div class="stat-value success">{{ stats.collector.active }}</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="16">
         <el-card>
           <template #header>
@@ -93,7 +119,8 @@ const stats = ref({
   activeCodes: 0,
   activeDevices: 0,
   todayActivations: 0,
-  trend: []
+  trend: [],
+  collector: { total: 0, active: 0, devices: 0 }
 })
 
 const initChart = () => {
