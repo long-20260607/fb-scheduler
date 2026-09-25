@@ -64,8 +64,9 @@ Deno.serve(async (req) => {
 
       if (error) throw error
 
+      const embedKey = T.devices
       const list = (data || []).map(item => {
-        const activations = item.device_activations || []
+        const activations = item[embedKey] || []
         const lastActivatedAt = activations
           .map((da: any) => da.activated_at)
           .filter(Boolean)
@@ -76,7 +77,7 @@ Deno.serve(async (req) => {
           ...item,
           last_activated_at: lastActivatedAt,
           device_expire_at: item.expire_at || null,
-          device_activations: undefined
+          [embedKey]: undefined
         }
       })
 
@@ -280,9 +281,10 @@ Deno.serve(async (req) => {
 
     // PUT /admin-codes/:id - 更新
     if (req.method === 'PUT') {
-      const T = tableMap()
       const id = url.searchParams.get('id') || path
       const body = await req.json()
+      if (!scope && body.scope) scope = body.scope
+      const T = tableMap()
       const { status, duration_days, max_devices, expire_at } = body
 
       const updateData: any = {}
