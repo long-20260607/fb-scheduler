@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     }
 
     // 获取统计数据
-    const [codesCount, activeCodesCount, activeDevicesCount, todayActivations] = await Promise.all([
+    const [codesCount, activeCodesCount, activeDevicesCount, todayActivations, collectorTotal, collectorActive, collectorDevices] = await Promise.all([
       supabase.from('activation_codes').select('*', { count: 'exact', head: true }),
       supabase.from('activation_codes').select('*', { count: 'exact', head: true }).eq('status', 'active'),
       supabase.from('device_activations').select('*', { count: 'exact', head: true }),
@@ -30,7 +30,10 @@ Deno.serve(async (req) => {
         .select('*', { count: 'exact', head: true })
         .eq('action', 'activate')
         .eq('result', 'success')
-        .gte('created_at', new Date().toISOString().split('T')[0])
+        .gte('created_at', new Date().toISOString().split('T')[0]),
+      supabase.from('collector_activation_codes').select('*', { count: 'exact', head: true }),
+      supabase.from('collector_activation_codes').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('collector_device_activations').select('*', { count: 'exact', head: true })
     ])
 
     // 最近 7 天的激活趋势
@@ -62,7 +65,12 @@ Deno.serve(async (req) => {
         activeCodes: activeCodesCount.count || 0,
         activeDevices: activeDevicesCount.count || 0,
         todayActivations: todayActivations.count || 0,
-        trend
+        trend,
+        collector: {
+          total: collectorTotal.count || 0,
+          active: collectorActive.count || 0,
+          devices: collectorDevices.count || 0
+        }
       }
     }, 200, origin)
   } catch (error) {
