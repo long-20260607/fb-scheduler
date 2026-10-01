@@ -35,6 +35,29 @@ function base64UrlDecode(str: string): Uint8Array {
   return Uint8Array.from(atob(padded), c => c.charCodeAt(0))
 }
 
+// scope → 数据表名映射
+// 仅 'collector' 走采集插件（fb-page-collector）的独立表，其余一律回退旧表，
+// 保证已有的 fb-scheduler-plugin 行为完全不变。
+export function getScopeTables(scope?: string) {
+  return scope === 'collector'
+    ? { codes: 'collector_activation_codes', devices: 'collector_device_activations' }
+    : { codes: 'activation_codes', devices: 'device_activations' }
+}
+
+// 读取 JSON body（body 只能读取一次，统一在此处读取后返回）
+export async function readJsonBody(req: Request): Promise<any> {
+  try {
+    return await req.json()
+  } catch {
+    return {}
+  }
+}
+
+// 解析 scope：优先 body.scope，其次 querystring ?scope=
+export function resolveScope(req: Request, body: any): string {
+  return (body && body.scope) || new URL(req.url).searchParams.get('scope') || ''
+}
+
 export async function verifyToken(token: string): Promise<any> {
   const JWT_SECRET = Deno.env.get('JWT_SECRET')
   if (!JWT_SECRET) {

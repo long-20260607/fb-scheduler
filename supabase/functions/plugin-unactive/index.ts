@@ -1,4 +1,4 @@
-import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
+import { getSupabaseClient, corsHeaders, jsonResponse, getScopeTables, readJsonBody, resolveScope } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
@@ -8,7 +8,9 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = getSupabaseClient()
-    const { fingerId, code } = await req.json()
+    const body = await readJsonBody(req)
+    const T = getScopeTables(resolveScope(req, body))
+    const { fingerId, code } = body
 
     if (!fingerId || !code) {
       await logAction(supabase, 'deactivate', code, fingerId, req, 'failed', '参数不完整')
@@ -17,7 +19,7 @@ Deno.serve(async (req) => {
 
     // 查询激活码
     const { data: codeData, error: codeError } = await supabase
-      .from('activation_codes')
+      .from(T.codes)
       .select('*')
       .eq('code', code)
       .single()
@@ -29,7 +31,7 @@ Deno.serve(async (req) => {
 
     // 查找并删除激活记录
     const { data: activationData } = await supabase
-      .from('device_activations')
+      .from(T.devices)
       .select('*')
       .eq('code_id', codeData.id)
       .eq('finger_id', fingerId)
@@ -41,7 +43,7 @@ Deno.serve(async (req) => {
     }
 
     await supabase
-      .from('device_activations')
+      .from(T.devices)
       .delete()
       .eq('id', activationData.id)
 

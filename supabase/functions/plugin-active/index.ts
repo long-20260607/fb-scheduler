@@ -1,4 +1,4 @@
-import { getSupabaseClient, corsHeaders, jsonResponse } from '../_shared/supabase.ts'
+import { getSupabaseClient, corsHeaders, jsonResponse, getScopeTables, readJsonBody, resolveScope } from '../_shared/supabase.ts'
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin') || ''
@@ -8,7 +8,9 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = getSupabaseClient()
-    const { fingerId, code } = await req.json()
+    const body = await readJsonBody(req)
+    const T = getScopeTables(resolveScope(req, body))
+    const { fingerId, code } = body
 
     if (!fingerId || !code) {
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '参数不完整')
@@ -17,7 +19,7 @@ Deno.serve(async (req) => {
 
     // 查询激活码
     const { data: codeData, error: codeError } = await supabase
-      .from('activation_codes')
+      .from(T.codes)
       .select('*')
       .eq('code', code)
       .single()
@@ -38,7 +40,7 @@ Deno.serve(async (req) => {
     const isExpired = codeData.status === 'expired' || (codeData.expire_at && new Date(codeData.expire_at) < now)
     if (isExpired) {
       if (codeData.status !== 'expired') {
-        await supabase.from('activation_codes').update({ status: 'expired' }).eq('id', codeData.id)
+        await supabase.from(T.codes).update({ status: 'expired' }).eq('id', codeData.id)
       }
       await logAction(supabase, 'activate', code, fingerId, req, 'failed', '激活码已过期')
       return jsonResponse({ status: false, msg: '激活码已过期' }, 200, origin)
@@ -46,7 +48,7 @@ Deno.serve(async (req) => {
 
     // 查询当前激活码的所有设备
     const { data: activeDevices } = await supabase
-      .from('device_activations')
+      .from(T.devices)
       .select('*')
       .eq('code_id', codeData.id)
 
@@ -75,13 +77,13 @@ Deno.serve(async (req) => {
       // 首次激活，设置码级到期时间
       expireAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString()
       await supabase
-        .from('activation_codes')
+        .from(T.codes)
         .update({ expire_at: expireAt, status: 'active' })
         .eq('id', codeData.id)
     }
 
     // 创建设备激活记录
-    await supabase.from('device_activations').insert({
+    await supabase.from(T.devices).insert({
       code_id: codeData.id,
       finger_id: fingerId
     })
